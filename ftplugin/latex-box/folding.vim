@@ -65,6 +65,61 @@ function! LatexBox_FoldLevel(lnum)
     return "="
 endfunction
 
+" {{{1 LatexBox_FoldText help functions
+function! s:EnvLabel()
+    let i = v:foldstart
+    while i <= v:foldend
+        if getline(i) =~ '^\s*\\label'
+            return ' (' . matchstr(getline(i),
+                        \ '^\s*\\label{\zs.*\ze}') . ')'
+        end
+        let i += 1
+    endwhile
+
+    return ""
+endfunction
+
+function! s:EnvCaption()
+    let caption = ''
+
+    " Look for caption command
+    let i = v:foldstart
+    while i <= v:foldend
+        if getline(i) =~ '^\s*\\caption'
+            let caption = matchstr(getline(i),
+                        \ '^\s*\\caption\(\[.*\]\)\?{\zs.\{1,30}')
+        end
+        let i += 1
+    endwhile
+
+    " Remove dangling '}'
+    let caption = substitute(caption, '}\s*$', '','')
+
+    return caption
+endfunction
+
+function! s:FrameCaption(line)
+    " Test simple variant first
+    let caption = matchstr(a:line,'\\begin\*\?{.*}{\zs.\{1,30}')
+
+    if caption == ''
+        " Look for frametitle command
+        let i = v:foldstart
+        while i <= v:foldend
+            if getline(i) =~ '^\s*\\frametitle'
+                let caption = matchstr(getline(i),
+                            \ '^\s*\\frametitle\(\[.*\]\)\?{\zs.\{1,30}')
+            end
+            let i += 1
+        endwhile
+    endif
+
+    " Remove dangling '}'
+    let caption = substitute(caption, '}\s*$', '','')
+
+    return caption
+endfunction
+
 " {{{1 LatexBox_FoldText
 function! LatexBox_FoldText(lnum)
     let line = getline(a:lnum)
@@ -95,23 +150,14 @@ function! LatexBox_FoldText(lnum)
     " Environments
     if line =~ '\\begin'
         let env = matchstr(line,'\\begin\*\?{\zs\w*\*\?\ze}')
-        let label = ''
-        let caption = ''
-        let i = v:foldstart
-        while i <= v:foldend
-            if getline(i) =~ '^\s*\\label'
-                let label = ' (' . matchstr(getline(i),
-                            \ '^\s*\\label{\zs.*\ze}') . ')'
-            end
-            if getline(i) =~ '^\s*\\caption'
-                let env .=  ': '
-                let caption = matchstr(getline(i),
-                            \ '^\s*\\caption\(\[.*\]\)\?{\zs.\{1,30}')
-                let caption = substitute(caption, '}\s*$', '','')
-
-            end
-            let i += 1
-        endwhile
+        if env == 'frame'
+            let label = ''
+            let caption = s:FrameCaption(line)
+        else
+            let label = s:EnvLabel()
+            let caption = s:EnvCaption()
+        endif
+        if caption != '' | let env .= ': ' | endif
         return pretext . printf('%-12s', env) . caption . label
     endif
 
