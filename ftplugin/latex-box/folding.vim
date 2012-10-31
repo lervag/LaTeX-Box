@@ -43,6 +43,11 @@ function! LatexBox_FoldLevel(lnum)
         endif
     endif
 
+    " Never fold \end{document}
+    if getline(a:lnum + 1) =~ '\s*\\end{document}'
+        return "<1"
+    endif
+
     " Fold parts and sections
     let level = 1
     for part in g:LatexBox_fold_parts
