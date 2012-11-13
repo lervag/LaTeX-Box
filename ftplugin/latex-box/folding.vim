@@ -48,6 +48,11 @@ function! LatexBox_FoldLevel(lnum)
         return "<1"
     endif
 
+    " Fake sections
+    if line  =~ '^\s*% Fakesection'
+        return ">1"
+    endif
+
     " Fold parts and sections
     let level = 1
     for part in g:LatexBox_fold_parts
@@ -144,6 +149,14 @@ function! LatexBox_FoldText(lnum)
     " Preamble
     if line =~ '\s*\\documentclass'
         return pretext . "Preamble"
+    endif
+
+    " Fakesections
+    if line =~ 'Fakesection:'
+        return pretext .  matchstr(line, 'Fakesection:\s*\zs.*')
+    endif
+    if line =~ 'Fakesection'
+        return pretext . "Fakesection"
     endif
 
     " Parts and sections
