@@ -11,7 +11,7 @@
 if exists('g:LatexBox_Folding')
     setl foldmethod=expr
     setl foldexpr=LatexBox_FoldLevel(v:lnum)
-    setl foldtext=LatexBox_FoldText(v:foldstart)
+    setl foldtext=LatexBox_FoldText()
 endif
 if !exists('g:LatexBox_fold_preamble')
     let g:LatexBox_fold_preamble=1
@@ -76,93 +76,88 @@ function! LatexBox_FoldLevel(lnum)
 endfunction
 
 " {{{1 LatexBox_FoldText help functions
-function! s:EnvLabel()
-    let i = v:foldstart
-    while i <= v:foldend
+function! s:LabelEnv()
+    let i = v:foldend
+    while i >= v:foldstart
         if getline(i) =~ '^\s*\\label'
-            return ' (' . matchstr(getline(i),
-                        \ '^\s*\\label{\zs.*\ze}') . ')'
+            return matchstr(getline(i), '^\s*\\label{\zs.*\ze}')
         end
-        let i += 1
+        let i -= 1
     endwhile
-
     return ""
 endfunction
 
-function! s:EnvCaption()
-    let caption = ''
+function! s:CaptionEnv()
+    let i = v:foldend
+    while i >= v:foldstart
+        if getline(i) =~ '^\s*\\caption'
+            return matchstr(getline(i), '^\s*\\caption\(\[.*\]\)\?{\zs.\+')
+        end
+        let i -= 1
+    endwhile
+    return ""
+endfunction
 
-    " Look for caption command
+function! s:CaptionTable()
     let i = v:foldstart
     while i <= v:foldend
         if getline(i) =~ '^\s*\\caption'
-            let caption = matchstr(getline(i),
-                        \ '^\s*\\caption\(\[.*\]\)\?{\zs.\{1,30}')
+            return matchstr(getline(i), '^\s*\\caption\(\[.*\]\)\?{\zs.\+')
         end
         let i += 1
     endwhile
-
-    " Remove dangling '}'
-    let caption = substitute(caption, '}\s*$', '','')
-
-    return caption
+    return ""
 endfunction
 
-function! s:FrameCaption(line)
+function! s:CaptionFrame(line)
     " Test simple variant first
-    let caption = matchstr(a:line,'\\begin\*\?{.*}{\zs.\{1,30}')
+    let caption = matchstr(a:line,'\\begin\*\?{.*}{\zs.\+')
 
-    if caption == ''
-        " Look for frametitle command
+    if ! caption == ''
+        return caption
+    else
         let i = v:foldstart
         while i <= v:foldend
             if getline(i) =~ '^\s*\\frametitle'
-                let caption = matchstr(getline(i),
-                            \ '^\s*\\frametitle\(\[.*\]\)\?{\zs.\{1,30}')
+                return matchstr(getline(i),
+                            \ '^\s*\\frametitle\(\[.*\]\)\?{\zs.\+')
             end
             let i += 1
         endwhile
+
+        return ""
     endif
-
-    " Remove dangling '}'
-    let caption = substitute(caption, '}\s*$', '','')
-
-    return caption
 endfunction
 
 " {{{1 LatexBox_FoldText
-function! LatexBox_FoldText(lnum)
-    let line = getline(a:lnum)
+function! LatexBox_FoldText()
+    " Initialize
+    let line = getline(v:foldstart)
+    let nlines = v:foldend - v:foldstart + 1
+    let level = ''
+    let title = 'Not defined'
 
-    " Define pretext
-    let pretext = '    '
-    if v:foldlevel == 1
-        let pretext = '>   '
-    elseif v:foldlevel == 2
-        let pretext = '->  '
-    elseif v:foldlevel == 3
-        let pretext = '--> '
-    elseif v:foldlevel >= 4
-        let pretext = printf('--%i ',v:foldlevel)
+    " Fold level
+    let level = strpart(repeat('-', v:foldlevel-1) . '*',0,3)
+    if v:foldlevel > 3
+        let level = strpart(level, 1) . v:foldlevel
     endif
+    let level = printf('%-3s', level)
 
     " Preamble
     if line =~ '\s*\\documentclass'
-        return pretext . "Preamble"
+        let title = "Preamble"
     endif
 
-    " Fakesections
-    if line =~ 'Fakesection:'
-        return pretext .  matchstr(line, 'Fakesection:\s*\zs.*')
-    endif
-    if line =~ 'Fakesection'
-        return pretext . "Fakesection"
-    endif
-
-    " Parts and sections
+    " Parts, sections and fake sections
     if line =~ '\\\(\(sub\)*section\|part\|chapter\)'
-        return pretext .  matchstr(line,
+        let title =  matchstr(line,
                     \ '^\s*\\\(\(sub\)*section\|part\|chapter\)\*\?{\zs.*\ze}')
+    elseif line =~ 'Fakesection:'
+        let title = matchstr(line, 'Fakesection:\s*\zs.*')
+    elseif line =~ 'Fakesection'
+        let title = "Fakesection"
+        return title
     endif
 
     " Environments
@@ -170,17 +165,30 @@ function! LatexBox_FoldText(lnum)
         let env = matchstr(line,'\\begin\*\?{\zs\w*\*\?\ze}')
         if env == 'frame'
             let label = ''
-            let caption = s:FrameCaption(line)
+            let caption = s:CaptionFrame(line)
+        elseif env == 'table'
+            let label = s:LabelEnv()
+            let caption = s:CaptionTable()
         else
-            let label = s:EnvLabel()
-            let caption = s:EnvCaption()
+            let label = s:LabelEnv()
+            let caption = s:CaptionEnv()
         endif
-        if caption != '' | let env .= ': ' | endif
-        return pretext . printf('%-12s', env) . caption . label
+        if caption . label == ''
+            let title = env
+        elseif label == ''
+            let title = printf('%-12s%s', env . ':',
+                        \ substitute(caption, '}\s*$', '',''))
+        elseif caption == ''
+            let title = printf('%-12s%57s', env, '(' . label . ')')
+        else
+            let title = printf('%-12s%-35s %-21s', env . ':',
+                        \ strpart(substitute(caption, '}\s*$', '',''),0,35),
+                        \ '(' . label . ')')
+        endif
     endif
 
-    " Not defined
-    return "Fold text not defined"
+    let title = strpart(title, 0, 69)
+    return printf('%-3s %-69s #%5d', level, title, nlines)
 endfunction
 
 " {{{1 Footer
